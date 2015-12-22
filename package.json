@@ -1,0 +1,25 @@
+{
+  "name": "relm",
+  "version": "1.0.0",
+  "description": "",
+  "main": "target/elm.js",
+  "scripts": {
+    "watch": "watch 'elm make --output target/elm.js src/Main.elm' src"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dribba/relm.git"
+  },
+  "keywords": [
+    "elm"
+  ],
+  "author": "dribba",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dribba/relm/issues"
+  },
+  "homepage": "https://github.com/dribba/relm#readme",
+  "devDependencies": {
+    "watch": "^0.17.1"
+  }
+}
