@@ -1,4 +1,4 @@
-module Main where
+module Relm where
 
 import Color exposing (..)
 import Text
@@ -52,12 +52,12 @@ view state =
     show ("Awesome stats = vx: " ++ (toString state.character.vx) ++ " vy: " ++ (toString state.character.vy)) 
 
 update : {x: Int, y: Int} -> State -> State
-update ({x, y} as pos) state =
+update {x, y} state =
     let 
         oldCharacter = state.character
         newCharacter = { oldCharacter |
-                            vx = pos.x, 
-                            vy = pos.y
+                            vx = x,
+                            vy = y
                        }
     in
         { state | character = newCharacter }
