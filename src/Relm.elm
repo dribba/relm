@@ -41,7 +41,6 @@ tileWidth = 32
 gameHeight = 400
 gameWidth = 480
 
-
 initialState = 
     { scene = Intro
     , character = 
@@ -56,11 +55,11 @@ initialState =
     }
 
 
+-- VIEW 
 gameStats state =
     "vx: " ++ (toString state.character.vx) ++ " vy: " ++ (toString state.character.vy) 
     |> Text.fromString
     |> leftAligned
-
 
 gameContainer =
     container gameWidth gameHeight middle
@@ -70,43 +69,51 @@ mainCharacter character =
     rect 20 20 
     |> filled red
     |> move (toFloat character.position.x, toFloat character.position.y)
+
+printStats : Element -> Form
+printStats stats =
+    toForm(stats) |> move (50 - gameWidth / 2, 20 - gameHeight / 2)
     
 view : State -> Element
 view state =
     container gameWidth gameHeight middle <|
     collage gameWidth gameHeight
-        [ toForm(gameStats state) |> move (50 - gameWidth / 2, 20 - gameHeight / 2)
+        [ printStats (gameStats state)
         , mainCharacter state.character
         ]
 
-update : {x: Int, y: Int} -> State -> State
-update {x, y} state =
-    let 
-        oldPosition = state.character.position
-        newPosition = { oldPosition |
-                        x = oldPosition.x + x,
-                        y = oldPosition.y + y 
-                      }
-        oldCharacter = state.character
-        newCharacter = { oldCharacter |
-                            vx = x,
-                            vy = y,
-                            position = newPosition
-                       }
-    in
-        { state | character = newCharacter }
 
+-- UPDATE
+updatePosition : {x: Int, y: Int} -> Position -> Position
+updatePosition {x, y} position =
+    { position |
+        x = position.x + x,
+        y = position.y + y  
+    }
+
+updateCharacter : {x: Int, y: Int} -> Character -> Character
+updateCharacter ({x, y} as speed) character = 
+    { character |
+        vx = x,
+        vy = y,
+        position = updatePosition speed character.position
+    }
+
+update : {x: Int, y: Int} -> State -> State
+update speed state =
+    { state | character = updateCharacter speed state.character}
+
+
+-- MAIN
 main =
     Signal.map view (Signal.foldp update initialState clock)
-    
 
+
+-- KEYS
+input : Signal { x: Int, y: Int }
 input = 
     Keyboard.arrows
 
-speed = 3
-
 clock : Signal {x: Int, y: Int}    
 clock =
-    Signal.map2 (\dt arrows -> { arrows | x = arrows.x * speed, y = arrows.y * speed }) (fps 30) input
-    
-    
+    Signal.map2 (\dt arrows -> arrows) (fps 30) input
