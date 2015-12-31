@@ -6,11 +6,24 @@ import Time exposing (..)
 import Keyboard
 import Graphics.Collage exposing (..)
 import Graphics.Element exposing (..)
+import Math exposing (toDegrees)
+import Game exposing (Map)
+import Random exposing (Seed)
 
 type Scene 
   = Intro 
   | Stage Int
-   
+  
+type alias Point = 
+  { x: Float
+  , y: Float
+  }
+
+type alias Velocity = Point
+type alias Position = Point
+
+type alias Boundaries = (Float, Float)
+
 type Direction 
   = N
   | NW
@@ -26,25 +39,9 @@ type alias Input =
   , time: Time
   }
 
-type alias Position = 
-  { x: Int
-  , y: Int
-  }
-  
-type alias Boundaries =
-  { low: Int
-  , high: Int
-  }
-  
-type alias Velocity =
-  { x: Int
-  , y: Int
-  }
-
 type alias Character =
   { position: Position 
-  , vx: Int
-  , vy: Int
+  , velocity: Velocity
   , direction: Direction
   , angle: Int
   }
@@ -52,6 +49,7 @@ type alias Character =
 type alias State = 
   { scene: Scene
   , character: Character
+  , gameMap: Map
   }
 
 
@@ -61,18 +59,15 @@ tileWidth = 40
 gameWidth = 480
 gameHeight = 400
 
-initialState = 
+initialState gameMap = 
   { scene = Intro
   , character = 
-    { position = 
-      { x = 50
-      , y = 50
-      }
-    , vx = 0
-    , vy = 0
+    { position =  { x = 50, y = 50 }
+    , velocity = { x = 0, y = 0 }
     , direction = S
     , angle = 180
     }
+  , gameMap = gameMap
   }
 
 
@@ -87,8 +82,8 @@ grass =
 
 gameStats : State -> Element
 gameStats state =
-  "vx: " ++ (toString state.character.vx) ++ 
-  " vy: " ++ (toString state.character.vy)  ++ 
+  "vx: " ++ (toString state.character.velocity.x) ++ 
+  " vy: " ++ (toString state.character.velocity.y)  ++ 
   " dir: " ++ (toString state.character.direction) ++
   " ang: " ++ (toString state.character.angle) 
   |> Text.fromString
@@ -124,15 +119,15 @@ angleToDirection angle =
 
 directional rad = 
   let
-  half = rad / 2
+    half = rad / 2
   in 
-  filled green (polygon [ (0, rad)
-              , (-half, -half)
-              , (0, 0)
-              , (half, -half)
-              , (0, rad)
-              ]
-         )
+    filled green (polygon [ (0, rad)
+                          , (-half, -half)
+                          , (0, 0)
+                          , (half, -half)
+                          , (0, rad)
+                          ]
+                 )
 
 
 direction : Character -> Form
@@ -144,12 +139,12 @@ direction character =
 
 mainCharacter : Character -> Form
 mainCharacter character =
-  group [ rect 20 20 
-        |> filled red
-        |> move (toFloat character.position.x, toFloat character.position.y)
+  group [ circle 10
+        |> outlined (solid (rgba 50 50 50 0.6))
+        |> move (character.position.x, character.position.y)
         
       , direction character 
-        |> move (toFloat character.position.x, toFloat character.position.y)
+        |> move (character.position.x, character.position.y)
       ]    
 
 printStats : Element -> Form
@@ -187,35 +182,30 @@ boundaries size =
   let 
     half = size |> toFloat |> (\s -> s / 2)
   in
-    { low = floor -half
-    , high = ceiling half
-    }
+    (-half, half)
     
 -- UPDATE
-updateCoordinate : Boundaries -> Time -> Int -> Int -> Int
+updateCoordinate : Boundaries -> Time -> Float -> Float -> Float
 updateCoordinate boundaries time coord velocity =
   let 
-    newCoord = (toFloat coord) + (toFloat velocity) * time
+    newCoord = coord + velocity * time
   in 
-    clamp boundaries.low boundaries.high (round newCoord)
-
-toDegrees rad =
-  rad * 180 / pi
+    clamp (fst boundaries) (snd boundaries) newCoord 
 
 updatePosition : Input -> Character -> Character
 updatePosition input character =
   let 
     position = character.position
     newPosition = { position |
-              x = updateCoordinate (boundaries gameWidth) input.time position.x input.arrows.x,
-              y = updateCoordinate (boundaries gameHeight) input.time position.y input.arrows.y 
-            }
+                    x = updateCoordinate (boundaries gameWidth) input.time position.x input.arrows.x,
+                    y = updateCoordinate (boundaries gameHeight) input.time position.y input.arrows.y 
+                  }
     angle = if input.arrows.x == 0 && input.arrows.y == 0 then 
-          character.angle
-        else 
-          (atan2 (toFloat input.arrows.x) (toFloat input.arrows.y)) |> toDegrees |> round
+              character.angle
+            else 
+              (atan2 input.arrows.x input.arrows.y) |> toDegrees |> round
     direction = angleToDirection angle 
-   in
+  in
     { character | 
       position = newPosition,
       direction = direction,
@@ -224,10 +214,14 @@ updatePosition input character =
 
 updateVelocity : Input -> Character -> Character
 updateVelocity input character =
-  { character | 
-    vx = input.arrows.x,
-    vy = input.arrows.y
-  }
+  let 
+    velocity = character.velocity
+    newVel = { velocity | 
+               x = input.arrows.x,
+               y = input.arrows.y
+             }
+  in
+    { character | velocity = newVel }
 
 
 update : Input -> State -> State
@@ -238,17 +232,24 @@ update input state =
             |> updatePosition input
   }
 
-
 -- MAIN
+emptyMap : Int -> Int -> Map
+emptyMap width height = 
+  Debug.log "Map: " (Game.generateMap {} (Random.initialSeed 12345) (width, height))
+
 main : Signal Element
 main =
-  Signal.map view (Signal.foldp update initialState input)
+  Signal.map view (Signal.foldp update (initialState (emptyMap 80 80)) input)
 
 
 -- KEYS
 input : Signal Input
 input = 
-  Signal.sampleOn delta (Signal.map2 (\time arrows -> { time = time, arrows = arrows }) delta Keyboard.arrows)
+  Signal.sampleOn delta (Signal.map2 (\time arrows -> { time = time
+                                                      , arrows = { x = toFloat arrows.x
+                                                                 , y = toFloat arrows.y
+                                                                 } 
+                                                      }) delta Keyboard.arrows )
 
 delta : Signal Time  
 delta =

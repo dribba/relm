@@ -4,6 +4,7 @@
     "repository": "https://github.com/dribba/relm.git",
     "license": "MIT",
     "source-directories": [
+        "src/util",
         "src"
     ],
     "exposed-modules": [],
