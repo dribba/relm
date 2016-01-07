@@ -1,39 +1,66 @@
 module Game where
 
 import Random exposing (Generator, Seed)
+import Array exposing (..)
 
 type alias MapSettings = {}
-type alias Block = Int
-type alias Grid = List (Int, Int)
+
+type Block = 
+  Empty
+  | Wall
+  
+
+type alias Point = 
+  { x: Float
+  , y: Float
+  }
+
+type alias Velocity = Point
+type alias Position = Point
+
+type alias Boundaries = (Float, Float)
+
+type alias Grid = Array (Int, Int)
 type alias Tile = ((Int, Int), Block)
 type alias Map = 
-  { tiles: List Tile
+  { tiles: Array Tile
   , charStPos: (Int, Int)
   , nextMapSeed: Seed
   }
-  
-emptyBlock : Block
-emptyBlock = 0
 
-wallBlock : Block
-wallBlock = 1
+arrayConcatMap : (a -> Array b) -> Array a -> Array b
+arrayConcatMap fn xs =
+  let 
+    mergeThem el ys = Array.append ys (fn el)
+  in
+    Array.foldl mergeThem Array.empty xs
 
-charPos : Block
-charPos = 2
+toTuple : Point -> (Float, Float)
+toTuple {x, y} = (x, y)
 
 generateEmptyGrid : Int -> Int -> Grid
 generateEmptyGrid w h =
   let 
-    addY x = List.map (x |> (,)) [0..(h-1)]
+    addY x = initialize (h - 1) ((,) x)
   in
-    List.concatMap addY [0..(w-1)]
+    arrayConcatMap addY (initialize (w - 1) identity)
 
 placeTile : Block -> (Int, Int) -> Tile
 placeTile tile p = (p, tile)
 
-grid : (Int, Int) -> Block -> List Tile
+tileToCoords : Int -> Int -> (Int, Int) -> Point
+tileToCoords tileW tileH (x, y) =
+  let
+    (width, height) = (toFloat tileW, toFloat tileH)
+    (offsetX, offsetY) = (width / 2, height / 2)
+  in
+    { x = (toFloat x) * width + offsetX
+    , y = (toFloat y) * height + offsetY
+    }
+
+grid : (Int, Int) -> Block -> Array Tile
 grid (w, h) tile = 
-  List.map (placeTile tile) (generateEmptyGrid w h)
+  Array.map (placeTile tile) (generateEmptyGrid w h)
 
 characterRndPositionGen : Int -> Int -> Generator (Int, Int)
 characterRndPositionGen maxX maxY =
@@ -46,7 +73,7 @@ addCharPosition pos map =
 generateMap : MapSettings -> Seed -> (Int, Int) -> Map
 generateMap settings seed (width, height) =
   let
-    tiles = grid (width, height) emptyBlock -- For now just an empty map
+    tiles = grid (width, height) Empty -- For now just an empty map
     startingPosition = Random.generate (characterRndPositionGen width height) seed
   in
     { tiles = tiles

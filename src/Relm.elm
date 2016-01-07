@@ -7,23 +7,14 @@ import Keyboard
 import Graphics.Collage exposing (..)
 import Graphics.Element exposing (..)
 import Math exposing (toDegrees)
-import Game exposing (Map)
+import Game exposing (..)
 import Random exposing (Seed)
+import Array exposing (Array)
 
 type Scene 
   = Intro 
   | Stage Int
   
-type alias Point = 
-  { x: Float
-  , y: Float
-  }
-
-type alias Velocity = Point
-type alias Position = Point
-
-type alias Boundaries = (Float, Float)
-
 type Direction 
   = N
   | NW
@@ -36,11 +27,10 @@ type Direction
 
 type alias Input =
   { arrows: Velocity
-  , time: Time
   }
 
 type alias Character =
-  { position: Position 
+  { position: Game.Position 
   , velocity: Velocity
   , direction: Direction
   , angle: Int
@@ -50,7 +40,13 @@ type alias State =
   { scene: Scene
   , character: Character
   , gameMap: Map
+  , mapCenter: Point
+  , viewPortCenter: (Int, Int)
   }
+
+
+mapSize = 10
+mapMiddle = round (mapSize / 2) - 1
 
 
 tileHeight = 40
@@ -59,15 +55,31 @@ tileWidth = 40
 gameWidth = 480
 gameHeight = 400
 
+toCoords : (Int, Int) -> Point
+toCoords point = 
+  Game.tileToCoords tileWidth tileHeight point
+
+toRelativeCoords : Int -> Int -> (Int, Int) -> Point
+toRelativeCoords width height point =
+  let 
+    absCoords = toCoords point
+  in
+    { x = absCoords.x - (toFloat width / 2)
+    , y = absCoords.y - (toFloat height / 2)
+    }
+
+initialState : Map -> State
 initialState gameMap = 
   { scene = Intro
   , character = 
-    { position =  { x = 50, y = 50 }
+    { position = Debug.log "CharPos" (toCoords (mapMiddle, mapMiddle)) -- (toCoords gameMap.charStPos)
     , velocity = { x = 0, y = 0 }
     , direction = S
     , angle = 180
     }
   , gameMap = gameMap
+  , mapCenter = toCoords (mapMiddle, mapMiddle) -- 40 is the middle, but tiles are 0-indexed
+  , viewPortCenter = gameMap.charStPos
   }
 
 
@@ -82,16 +94,15 @@ grass =
 
 gameStats : State -> Element
 gameStats state =
-  "vx: " ++ (toString state.character.velocity.x) ++ 
-  " vy: " ++ (toString state.character.velocity.y)  ++ 
-  " dir: " ++ (toString state.character.direction) ++
-  " ang: " ++ (toString state.character.angle) 
+  "x: " ++ (toString state.character.position.x) ++ 
+  " y: " ++ (toString state.character.position.y)  ++ 
+  " dir: " ++ (toString state.character.direction)
   |> Text.fromString
   |> leftAligned
 
 gameContainer : Element -> Element
 gameContainer =
-  container gameWidth gameHeight middle
+  container gameWidth gameHeight bottomLeft 
 
 directionToAngle : Direction -> Int
 directionToAngle direction =
@@ -140,7 +151,7 @@ direction character =
 mainCharacter : Character -> Form
 mainCharacter character =
   group [ circle 10
-        |> outlined (solid (rgba 50 50 50 0.6))
+        |> outlined (solid black)--(solid (rgba 50 50 50 0.6))
         |> move (character.position.x, character.position.y)
         
       , direction character 
@@ -161,20 +172,67 @@ createAndPlace x y tile =
   in
     toForm(tile) |> move (posX, posY)
 
-grid : (Int, Int) -> Element -> List Form
-grid (w, h) tile = List.concatMap (\ix -> List.map (\iy -> createAndPlace ix iy tile) [0..(h-1)])  [0..(w-1)] 
+blockToTile : Block -> Form
+blockToTile block = 
+  case block of
+    Empty -> (rect 40 40) |> filled (rgb 100 100 100)
+    Wall -> toForm empty -- Shouldn't happen for now
 
-stage : Element
-stage =
-  collage gameWidth gameHeight (grid gridSize grass)
+
+-- printMap map = 
+relativeTo : Float -> Boundaries -> Boundaries
+relativeTo coord (low, high) = 
+  (coord + low, coord + high)
+
+inBounds : Boundaries -> Float -> Bool
+inBounds (low, high) coord = 
+  coord >= low && coord <= high
+  
+isRendered : (Int, Int) -> Float -> Point -> Point -> Bool 
+isRendered (viewPWidth, viewPHeight) drawARatio viewPort {x, y} =
+  let 
+    xBoundaries = ((toFloat viewPWidth) * drawARatio) |> round |> boundaries |> relativeTo viewPort.x
+    yBoundaries = ((toFloat viewPHeight) * drawARatio) |> round |> boundaries |> relativeTo viewPort.x
+  in
+    (inBounds xBoundaries x) && (inBounds yBoundaries y)
+
+placeTile : ((Int, Int) -> Point) -> Tile -> Form
+placeTile adjustCoords tile = 
+  (tile |> snd |> blockToTile) |> move (tile |> fst |> adjustCoords |> toTuple)
+
+grid : (Int, Int) -> Element -> List Form
+grid (w, h) tile = 
+  List.concatMap (\ix -> List.map (\iy -> createAndPlace ix iy tile) [0..(h-1)])  [0..(w-1)] 
+
+cross =
+  [rect 15 2, rect 2 15] |> List.map (filled red) |> group
+  
+addMapCenter coords tiles =
+  List.append tiles [cross]
+
+stage : Map -> Form
+stage map =
+  let 
+    mapWidth = mapSize * tileWidth
+    mapHeight = mapSize * tileHeight
+  in
+    group (Array.toList (map.tiles |> Array.map (placeTile (toRelativeCoords mapWidth mapHeight))))
+  
+sprites state =
+  group [ cross
+        --, printStats (gameStats state)
+        , mainCharacter state.character
+        ]
+  
+
+  
   
 view : State -> Element
 view state =
   gameContainer <|
   collage gameWidth gameHeight
-    [ toForm stage
-    , printStats (gameStats state)
-    , mainCharacter state.character
+    [ --stage state.gameMap
+     sprites state
     ]
 
 boundaries : Int -> Boundaries
@@ -185,10 +243,10 @@ boundaries size =
     (-half, half)
     
 -- UPDATE
-updateCoordinate : Boundaries -> Time -> Float -> Float -> Float
-updateCoordinate boundaries time coord velocity =
+updateCoordinate : Boundaries -> Float -> Float -> Float
+updateCoordinate boundaries coord velocity =
   let 
-    newCoord = coord + velocity * time
+    newCoord = coord + velocity
   in 
     clamp (fst boundaries) (snd boundaries) newCoord 
 
@@ -197,8 +255,8 @@ updatePosition input character =
   let 
     position = character.position
     newPosition = { position |
-                    x = updateCoordinate (boundaries gameWidth) input.time position.x input.arrows.x,
-                    y = updateCoordinate (boundaries gameHeight) input.time position.y input.arrows.y 
+                    x = updateCoordinate (boundaries gameWidth) position.x input.arrows.x,
+                    y = updateCoordinate (boundaries gameHeight) position.y input.arrows.y 
                   }
     angle = if input.arrows.x == 0 && input.arrows.y == 0 then 
               character.angle
@@ -239,18 +297,32 @@ emptyMap width height =
 
 main : Signal Element
 main =
-  Signal.map view (Signal.foldp update (initialState (emptyMap 80 80)) input)
-
+  let
+    inputFps = Signal.sampleOn updateFps inputSignal
+    updateState = Signal.foldp update (initialState (emptyMap mapSize mapSize)) inputFps
+    renderedView = Signal.sampleOn gameFps (Signal.map view updateState)
+  in
+    renderedView
 
 -- KEYS
-input : Signal Input
-input = 
-  Signal.sampleOn delta (Signal.map2 (\time arrows -> { time = time
-                                                      , arrows = { x = toFloat arrows.x
-                                                                 , y = toFloat arrows.y
-                                                                 } 
-                                                      }) delta Keyboard.arrows )
+gameRawFps =
+  40
 
-delta : Signal Time  
-delta =
-  Signal.map (\t -> t / 20) (fps 50)
+gameFps =
+  fps gameRawFps
+
+updateFps : Signal Time
+updateFps =
+  fps (gameRawFps * 2)
+
+inputSignal : Signal Input
+inputSignal =
+  let
+    asFloats arrows = 
+      { arrows = 
+        { x = toFloat arrows.x, 
+          y = toFloat arrows.y 
+        }
+      }
+  in
+    Signal.map asFloats Keyboard.arrows
